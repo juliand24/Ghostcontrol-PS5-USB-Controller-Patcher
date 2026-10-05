@@ -113,6 +113,30 @@ send_out(fd, &eps[1], enable, sizeof(enable));
 // Optionally: rumble keepalive every 5s (or controller disconnects from idle)
 ```
 
+### Steam Controller 2 (Wired USB)
+
+The wired Steam Controller 2 (Valve VID `0x28de`, PID `0x1302`) sends a
+native HID state report with report ID `0x42` on the `0x81` interrupt-IN
+endpoint. No output handshake is required for input streaming. The payload
+recognizes the report ID during probing so it is not mistaken for a Nintendo
+Switch controller.
+
+The state report uses little-endian fields after the report ID:
+
+```
+Byte  1: sequence
+Byte  2-5: button bitmask
+Byte  6-7: left trigger (signed 16-bit, 0-32767)
+Byte  8-9: right trigger (signed 16-bit, 0-32767)
+Byte 10-11: left stick X, Byte 12-13: left stick Y
+Byte 14-15: right stick X, Byte 16-17: right stick Y
+```
+
+The implementation maps the face buttons, bumpers, stick clicks, d-pad,
+Options/Create, Steam/PS, analog triggers, and both sticks into `ScePadData`.
+Trackpads, paddles, IMU, and rumble are not required for basic PS5 gameplay
+and are currently ignored.
+
 ### Generic / Unknown
 
 1. Open IN endpoint (no OUT init)
