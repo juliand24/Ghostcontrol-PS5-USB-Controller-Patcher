@@ -246,6 +246,23 @@ static int probe_one_path(const char *path, uint16_t *out_vid, uint16_t *out_pid
     int fd = open(path, O_RDWR|O_NONBLOCK);
     if (fd < 0) return 0;
 
+    /* Identify Valve's composite receiver before probing generic HID
+     * endpoints. Its first interface may be the short mouse report used by
+     * lizard mode, which otherwise gets mistaken for a Nintendo pad. */
+    struct usb_device_info dinfo;
+    memset(&dinfo, 0, sizeof(dinfo));
+    if (ioctl(fd, USB_DEVICEINFO, &dinfo) == 0 &&
+        dinfo.udi_vendorNo == STEAM_VID &&
+        (dinfo.udi_productNo == STEAM_PUCK_PID ||
+         dinfo.udi_productNo == STEAM_PUCK_ALT_PID)) {
+        *out_vid = VID_STEAM;
+        *out_pid = dinfo.udi_productNo;
+        gp_log("probe: %s Valve receiver pid=0x%04x\n",
+               path, dinfo.udi_productNo);
+        close(fd);
+        return 1;
+    }
+
     struct usb_fs_endpoint ep;
     struct usb_fs_init ini;
     struct usb_fs_uninit u;
@@ -413,6 +430,7 @@ static void *usb_hid_thread(void *arg) {
     void    *buffers[1]; uint32_t lengths[1];
     int fd = -1, out_opened = 0;
     int usb_ready_notified = 0;
+    uint32_t steam_lizard_ticks = 0;
 
     gp_log("slot[%d] USB thread: %s VID=0x%04x PID=0x%04x\n",
            slot, dev_path, vid, pid);
@@ -439,14 +457,42 @@ static void *usb_hid_thread(void *arg) {
 
         memset(&fs_open, 0, sizeof(fs_open));
         fs_open.ep_index = 0;
-        fs_open.ep_no = (pid == PID_STEAM) ? STEAM_EP_IN : STEAM_PUCK_EP_IN;
+        fs_open.ep_no = STEAM_EP_IN;
         fs_open.max_bufsize = 64; fs_open.max_frames = 1;
         if (ioctl(fd, USB_FS_OPEN, &fs_open) != 0) {
-            gp_log("slot[%d] Steam IN fail errno=%d\n", slot, errno);
-            goto uninit_exit;
+            if (pid == PID_STEAM ||
+                (fs_open.ep_no = STEAM_PUCK_EP_IN,
+                 ioctl(fd, USB_FS_OPEN, &fs_open) != 0)) {
+                gp_log("slot[%d] Steam IN fail errno=%d\n", slot, errno);
+                goto uninit_exit;
+            }
         }
         gp_log("slot[%d] Steam IN ep=0x%02x maxpkt=%u\n",
-               slot, STEAM_EP_IN, (unsigned)fs_open.max_packet_length);
+               slot, fs_open.ep_no, (unsigned)fs_open.max_packet_length);
+
+        if (pid == PID_STEAM_PUCK || pid == PID_STEAM_PUCK_ALT) {
+            /* HID feature report 0x01, SET_SETTINGS_VALUES (0x87):
+             * setting 9 is lizard mode, and zero enables raw Triton state
+             * reports. The receiver watchdog requires this every 3 seconds. */
+            uint8_t feature[64];
+            struct usb_gen_descriptor report;
+            memset(feature, 0, sizeof(feature));
+            feature[0] = 0x01;
+            feature[1] = 0x87;
+            feature[2] = 0x03;
+            feature[3] = 0x09;
+            feature[4] = 0x00;
+            feature[5] = 0x00;
+            memset(&report, 0, sizeof(report));
+            report.ugd_data = feature;
+            report.ugd_maxlen = sizeof(feature);
+            report.ugd_iface_index = USB_IFACE_INDEX_ANY;
+            report.ugd_report_type = 2; /* UHID_FEATURE_REPORT */
+            if (ioctl(fd, USB_SET_REPORT, &report) != 0)
+                gp_log("slot[%d] puck lizard-off failed errno=%d\n", slot, errno);
+            else
+                gp_log("slot[%d] puck lizard mode disabled\n", slot);
+        }
 
         buffers[0] = buf; lengths[0] = 64;
         eps[0].ppBuffer = buffers; eps[0].pLength = lengths;
@@ -568,6 +614,21 @@ main_loop: ;
     uint8_t nintendo_seq = 1;
 
     while (1) {
+        if ((pid == PID_STEAM_PUCK || pid == PID_STEAM_PUCK_ALT) &&
+            (++steam_lizard_ticks >= 60)) {
+            uint8_t feature[64];
+            struct usb_gen_descriptor report;
+            memset(feature, 0, sizeof(feature));
+            feature[0] = 0x01; feature[1] = 0x87;
+            feature[2] = 0x03; feature[3] = 0x09;
+            memset(&report, 0, sizeof(report));
+            report.ugd_data = feature;
+            report.ugd_maxlen = sizeof(feature);
+            report.ugd_iface_index = USB_IFACE_INDEX_ANY;
+            report.ugd_report_type = 2;
+            ioctl(fd, USB_SET_REPORT, &report);
+            steam_lizard_ticks = 0;
+        }
         memset(buf,0,64);
         buffers[0]=buf; lengths[0]=64;
         eps[0].ppBuffer=buffers; eps[0].pLength=lengths;
@@ -608,7 +669,8 @@ main_loop: ;
 
         if (pid == PID_XBOX) {
             injected = xbox_handle_packet(fd, eps, buf, len, &pad);
-        } else if (pid == PID_STEAM) {
+        } else if (pid == PID_STEAM ||
+                   pid == PID_STEAM_PUCK || pid == PID_STEAM_PUCK_ALT) {
             injected = steam_handle_packet(buf, len, &pad);
         } else {
             injected = nintendo_handle_packet(fd, eps, buf, len, &hs_state, &nintendo_seq, &pad);

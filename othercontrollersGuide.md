@@ -147,11 +147,12 @@ the payload only receives input reports and has no virtual-device output
 callback from which to obtain PS5 haptic requests.
 
 The wireless Steam Controller 2 puck is experimentally recognized on Valve
-receiver PIDs `0x1304` and `0x1305` when it exposes the same `0x42` state
-report on its second interrupt-IN endpoint. The puck must already be paired
-with the controller. If it uses a different endpoint or report format, capture
-the PS5 Ghostcontrol status log while it is connected so the probe can be
-adjusted without guessing.
+receiver PIDs `0x1304` and `0x1305`. The payload identifies the receiver by
+device descriptor, sends the HID feature report that disables lizard mode,
+and refreshes that setting every three seconds because the receiver has a
+watchdog. Raw `0x42` reports are then parsed through the Steam controller
+path. The puck must already be paired; haptics and wireless slot management
+are not implemented yet.
 
 ### Generic / Unknown
 
