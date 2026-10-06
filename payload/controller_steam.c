@@ -40,25 +40,40 @@ static uint8_t stick_axis(int16_t value) {
 }
 
 static uint8_t trigger_axis(int16_t value) {
-    if (value <= 0) return 0;
+    if (value <= -32768) return 0;
     if (value >= 32767) return 255;
-    return (uint8_t)(((uint32_t)value * 255u) / 32767u);
+    return (uint8_t)(((int32_t)value + 32768) >> 8);
+}
+
+static uint16_t touch_axis(int16_t value, uint16_t maximum) {
+    uint32_t normalized = (uint32_t)((int32_t)value + 32768);
+    return (uint16_t)((normalized * maximum) / 65535u);
 }
 
 /*
  * USB report 0x42, excluding the report ID:
  *   0: sequence, 1: buttons (uint32), 5: triggers (int16 pair),
- *   9: sticks (four int16).  The remaining fields are pads and IMU data.
+ *   9: sticks (four int16), 17: left pad, 23: right pad.
+ * The pad coordinates are signed 16-bit values and pressure is unsigned.
  */
 void steam_parse_state(const uint8_t *buf, uint32_t len, ScePadData *out) {
-    const uint8_t *p = buf + 1;
-    uint32_t buttons = read_u32(p + 1);
-    uint8_t l2 = trigger_axis(read_i16(p + 5));
-    uint8_t r2 = trigger_axis(read_i16(p + 7));
-    int16_t lx = read_i16(p + 9);
-    int16_t ly = read_i16(p + 11);
-    int16_t rx = read_i16(p + 13);
-    int16_t ry = read_i16(p + 15);
+    uint32_t buttons = read_u32(buf + 1);
+    uint8_t l2 = trigger_axis(read_i16(buf + 5));
+    uint8_t r2 = trigger_axis(read_i16(buf + 7));
+    int16_t lx = read_i16(buf + 9);
+    int16_t ly = read_i16(buf + 11);
+    int16_t rx = read_i16(buf + 13);
+    int16_t ry = read_i16(buf + 15);
+    int16_t left_pad_x = read_i16(buf + 17);
+    int16_t left_pad_y = read_i16(buf + 19);
+    uint16_t left_pressure = read_u16(buf + 21);
+    int16_t right_pad_x = read_i16(buf + 23);
+    int16_t right_pad_y = read_i16(buf + 25);
+    uint16_t right_pressure = read_u16(buf + 27);
+    int left_touch = (buttons & (1u << 25)) != 0;
+    int right_touch = (buttons & (1u << 21)) != 0;
+    int left_click = (buttons & (1u << 26)) != 0;
+    int right_click = (buttons & (1u << 22)) != 0;
 
     memset(out, 0, sizeof(*out));
     if (buttons & STEAM_A)         out->buttons |= SCE_PAD_BUTTON_CROSS;
@@ -78,6 +93,8 @@ void steam_parse_state(const uint8_t *buf, uint32_t len, ScePadData *out) {
     if (buttons & STEAM_DPAD_RIGHT)out->buttons |= SCE_PAD_BUTTON_RIGHT;
     if ((buttons & STEAM_L2_CLICK) || l2 > 16) out->buttons |= SCE_PAD_BUTTON_L2;
     if ((buttons & STEAM_R2_CLICK) || r2 > 16) out->buttons |= SCE_PAD_BUTTON_R2;
+    if (left_touch || right_touch || left_click || right_click)
+        out->buttons |= SCE_PAD_BUTTON_TOUCH_PAD;
 
     out->leftStick.x = stick_axis(lx);
     out->leftStick.y = (uint8_t)(255u - stick_axis(ly));
@@ -85,13 +102,27 @@ void steam_parse_state(const uint8_t *buf, uint32_t len, ScePadData *out) {
     out->rightStick.y = (uint8_t)(255u - stick_axis(ry));
     out->analogButtons.l2 = l2;
     out->analogButtons.r2 = r2;
+    out->touchData.fingers = (uint8_t)(left_touch + right_touch);
+    if (left_touch) {
+        out->touchData.touch[0].x = touch_axis(left_pad_x, 1919);
+        out->touchData.touch[0].y = touch_axis((int16_t)-left_pad_y, 1079);
+        out->touchData.touch[0].finger = 1;
+    }
+    if (right_touch) {
+        uint32_t index = (uint32_t)left_touch;
+        out->touchData.touch[index].x = touch_axis(right_pad_x, 1919);
+        out->touchData.touch[index].y = touch_axis((int16_t)-right_pad_y, 1079);
+        out->touchData.touch[index].finger = 1;
+    }
+    (void)left_pressure;
+    (void)right_pressure;
     out->connected = 1;
     out->quat.w = 1.0f;
     (void)len;
 }
 
 int steam_handle_packet(const uint8_t *buf, uint32_t len, ScePadData *out) {
-    if (len < 18 || buf[0] != STEAM_REPORT_STATE) return 0;
+    if (len < 29 || buf[0] != STEAM_REPORT_STATE) return 0;
     steam_parse_state(buf, len, out);
     return 1;
 }

@@ -126,16 +126,23 @@ The state report uses little-endian fields after the report ID:
 ```
 Byte  1: sequence
 Byte  2-5: button bitmask
-Byte  6-7: left trigger (signed 16-bit, 0-32767)
-Byte  8-9: right trigger (signed 16-bit, 0-32767)
+Byte  6-7: left trigger (signed 16-bit)
+Byte  8-9: right trigger (signed 16-bit)
 Byte 10-11: left stick X, Byte 12-13: left stick Y
 Byte 14-15: right stick X, Byte 16-17: right stick Y
+Byte 18-19: left trackpad X, Byte 20-21: left trackpad Y
+Byte 22-23: left trackpad pressure
+Byte 24-25: right trackpad X, Byte 26-27: right trackpad Y
+Byte 28-29: right trackpad pressure
 ```
 
 The implementation maps the face buttons, bumpers, stick clicks, d-pad,
-Options/Create, Steam/PS, analog triggers, and both sticks into `ScePadData`.
-Trackpads, paddles, IMU, and rumble are not required for basic PS5 gameplay
-and are currently ignored.
+Options/Create, Steam/PS, analog triggers, both sticks, and both trackpads
+into `ScePadData`. Trackpad coordinates are scaled to the DualSense touch
+surface and touch/click state is reported through the virtual controller.
+Paddles and IMU data are currently ignored. Rumble is not currently supported:
+the payload only receives input reports and has no virtual-device output
+callback from which to obtain PS5 haptic requests.
 
 ### Generic / Unknown
 
