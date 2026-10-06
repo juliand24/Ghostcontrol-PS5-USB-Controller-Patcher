@@ -137,11 +137,11 @@ Byte 28-29: right trackpad pressure
 ```
 
 The implementation maps the face buttons, bumpers, stick clicks, d-pad,
-three-line/Home and two-screen/Options buttons, analog triggers, both sticks,
-and both trackpads into `ScePadData`. Trackpad coordinates are scaled to the
-DualSense touch surface and touch/click state is reported through the virtual
-controller. The center Steam button is intentionally ignored. Paddles and IMU
-data are currently ignored. Rumble is not currently supported:
+Steam/Home, three-line/Options, and two-screen/Share buttons, analog triggers,
+both sticks, and both trackpads into `ScePadData`. Trackpad coordinates are
+scaled to the DualSense touch surface and touch/click state is reported through
+the virtual controller. Paddles and IMU data are currently ignored. Rumble is
+not currently supported:
 the payload only receives input reports and has no virtual-device output
 callback from which to obtain PS5 haptic requests.
 
