@@ -137,7 +137,7 @@ Byte 28-29: right trackpad pressure
 ```
 
 The implementation maps the face buttons, bumpers, stick clicks, d-pad,
-Steam/Home, three-line/Options, and two-screen/Share buttons, analog triggers,
+Steam/Home, three-line/Share, and two-screen/Options buttons, analog triggers,
 both sticks, and both trackpads into `ScePadData`. Trackpad coordinates are
 scaled to the DualSense touch surface and touch/click state is reported through
 the virtual controller. Paddles and IMU data are currently ignored. Rumble is

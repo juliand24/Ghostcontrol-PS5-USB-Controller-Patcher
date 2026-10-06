@@ -84,8 +84,8 @@ void steam_parse_state(const uint8_t *buf, uint32_t len, ScePadData *out) {
     if (buttons & STEAM_R)         out->buttons |= SCE_PAD_BUTTON_R1;
     if (buttons & STEAM_L3)        out->buttons |= SCE_PAD_BUTTON_L3;
     if (buttons & STEAM_R3)        out->buttons |= SCE_PAD_BUTTON_R3;
-    if (buttons & STEAM_MENU)      out->buttons |= SCE_PAD_BUTTON_OPTIONS;
-    if (buttons & STEAM_VIEW)      out->buttons |= SCE_PAD_BUTTON_SHARE;
+    if (buttons & STEAM_MENU)      out->buttons |= SCE_PAD_BUTTON_SHARE;
+    if (buttons & STEAM_VIEW)      out->buttons |= SCE_PAD_BUTTON_OPTIONS;
     if (buttons & STEAM_STEAM)     out->buttons |= SCE_PAD_BUTTON_PS;
     if (buttons & STEAM_DPAD_UP)   out->buttons |= SCE_PAD_BUTTON_UP;
     if (buttons & STEAM_DPAD_DOWN) out->buttons |= SCE_PAD_BUTTON_DOWN;
