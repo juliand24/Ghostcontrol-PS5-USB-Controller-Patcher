@@ -57,19 +57,19 @@ static uint16_t touch_axis(int16_t value, uint16_t maximum) {
  * The pad coordinates are signed 16-bit values and pressure is unsigned.
  */
 void steam_parse_state(const uint8_t *buf, uint32_t len, ScePadData *out) {
-    uint32_t buttons = read_u32(buf + 1);
-    uint8_t l2 = trigger_axis(read_i16(buf + 5));
-    uint8_t r2 = trigger_axis(read_i16(buf + 7));
-    int16_t lx = read_i16(buf + 9);
-    int16_t ly = read_i16(buf + 11);
-    int16_t rx = read_i16(buf + 13);
-    int16_t ry = read_i16(buf + 15);
-    int16_t left_pad_x = read_i16(buf + 17);
-    int16_t left_pad_y = read_i16(buf + 19);
-    uint16_t left_pressure = read_u16(buf + 21);
-    int16_t right_pad_x = read_i16(buf + 23);
-    int16_t right_pad_y = read_i16(buf + 25);
-    uint16_t right_pressure = read_u16(buf + 27);
+    uint32_t buttons = read_u32(buf + 2);
+    uint8_t l2 = trigger_axis(read_i16(buf + 6));
+    uint8_t r2 = trigger_axis(read_i16(buf + 8));
+    int16_t lx = read_i16(buf + 10);
+    int16_t ly = read_i16(buf + 12);
+    int16_t rx = read_i16(buf + 14);
+    int16_t ry = read_i16(buf + 16);
+    int16_t left_pad_x = read_i16(buf + 18);
+    int16_t left_pad_y = read_i16(buf + 20);
+    uint16_t left_pressure = read_u16(buf + 22);
+    int16_t right_pad_x = read_i16(buf + 24);
+    int16_t right_pad_y = read_i16(buf + 26);
+    uint16_t right_pressure = read_u16(buf + 28);
     int left_touch = (buttons & (1u << 25)) != 0;
     int right_touch = (buttons & (1u << 21)) != 0;
     int left_click = (buttons & (1u << 26)) != 0;
@@ -86,8 +86,7 @@ void steam_parse_state(const uint8_t *buf, uint32_t len, ScePadData *out) {
     if (buttons & STEAM_R3)        out->buttons |= SCE_PAD_BUTTON_R3;
     if (buttons & STEAM_MENU)      out->buttons |= SCE_PAD_BUTTON_OPTIONS;
     if (buttons & STEAM_VIEW)      out->buttons |= SCE_PAD_BUTTON_CREATE;
-    /* Do not map the Steam/Guide button to PS: a transient HID state can
-     * otherwise repeatedly open the PS5 Home screen. */
+    if (buttons & STEAM_STEAM)     out->buttons |= SCE_PAD_BUTTON_PS;
     if (buttons & STEAM_DPAD_UP)   out->buttons |= SCE_PAD_BUTTON_UP;
     if (buttons & STEAM_DPAD_DOWN) out->buttons |= SCE_PAD_BUTTON_DOWN;
     if (buttons & STEAM_DPAD_LEFT) out->buttons |= SCE_PAD_BUTTON_LEFT;
