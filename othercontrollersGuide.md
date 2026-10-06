@@ -146,6 +146,13 @@ data are currently ignored. Rumble is not currently supported:
 the payload only receives input reports and has no virtual-device output
 callback from which to obtain PS5 haptic requests.
 
+The wireless Steam Controller 2 puck is experimentally recognized on Valve
+receiver PIDs `0x1304` and `0x1305` when it exposes the same `0x42` state
+report on its second interrupt-IN endpoint. The puck must already be paired
+with the controller. If it uses a different endpoint or report format, capture
+the PS5 Ghostcontrol status log while it is connected so the probe can be
+adjusted without guessing.
+
 ### Generic / Unknown
 
 1. Open IN endpoint (no OUT init)

@@ -227,6 +227,8 @@ static void inject_pad(int slot, const ScePadData *pad) {
 #define PID_XBOX    0x02eau
 #define VID_STEAM   STEAM_VID
 #define PID_STEAM   STEAM_PID
+#define PID_STEAM_PUCK STEAM_PUCK_PID
+#define PID_STEAM_PUCK_ALT STEAM_PUCK_ALT_PID
 
 static const char *UGEN_PATHS[] = {
     "/dev/ugen2.2","/dev/ugen2.3","/dev/ugen2.4","/dev/ugen2.5",
@@ -299,6 +301,30 @@ static int probe_one_path(const char *path, uint16_t *out_vid, uint16_t *out_pid
         *out_vid=VID_SWITCH; *out_pid=PID_SWITCH;
         found = 1;
         goto done;
+    }
+
+    /* Steam Controller 2 wireless receiver (Proteus/Nereid): some
+     * firmware exposes the same 0x42 state report on the second IN endpoint. */
+    po.ep_no=STEAM_PUCK_EP_IN;
+    if (ioctl(fd,USB_FS_OPEN,&po)==0 && po.max_packet_length>0 && po.max_packet_length<=64) {
+        uint8_t probe_buf[64]; memset(probe_buf, 0, sizeof(probe_buf));
+        void *probe_ptrs[1] = { probe_buf };
+        uint32_t probe_len[1] = { sizeof(probe_buf) };
+        ep.ppBuffer = probe_ptrs; ep.pLength = probe_len; ep.nFrames = 1;
+        ep.timeout = 100; ep.flags = USB_FS_FLAG_SINGLE_SHORT_OK | USB_FS_FLAG_MULTI_SHORT_OK;
+        struct usb_fs_start probe_start; memset(&probe_start, 0, sizeof(probe_start));
+        probe_start.ep_index = 0;
+        if (ioctl(fd, USB_FS_START, &probe_start) == 0) {
+            struct usb_fs_complete probe_complete; memset(&probe_complete, 0, sizeof(probe_complete));
+            probe_complete.ep_index = 0; ioctl(fd, USB_FS_COMPLETE, &probe_complete);
+        }
+        struct usb_fs_close pc; memset(&pc, 0, sizeof(pc));
+        pc.ep_index = 0; ioctl(fd, USB_FS_CLOSE, &pc);
+        if (probe_len[0] >= 29 && probe_buf[0] == STEAM_REPORT_STATE) {
+            gp_log("probe: %s report=0x42 on receiver endpoint -> Steam puck\n", path);
+            *out_vid=VID_STEAM; *out_pid=PID_STEAM_PUCK;
+            found = 1; goto done;
+        }
     }
 
     /* Xbox One: ep=0x82, maxpkt in (0,64] */
@@ -392,7 +418,7 @@ static void *usb_hid_thread(void *arg) {
            slot, dev_path, vid, pid);
 
     /* ── Steam Controller 2: native HID state reports ─────────────────── */
-    if (pid == PID_STEAM) {
+    if (pid == PID_STEAM || pid == PID_STEAM_PUCK || pid == PID_STEAM_PUCK_ALT) {
         fd = open(dev_path, O_RDWR);
         if (fd < 0) {
             gp_log("slot[%d] Steam Controller 2 open fail errno=%d\n", slot, errno);
@@ -412,7 +438,8 @@ static void *usb_hid_thread(void *arg) {
         }
 
         memset(&fs_open, 0, sizeof(fs_open));
-        fs_open.ep_index = 0; fs_open.ep_no = STEAM_EP_IN;
+        fs_open.ep_index = 0;
+        fs_open.ep_no = (pid == PID_STEAM) ? STEAM_EP_IN : STEAM_PUCK_EP_IN;
         fs_open.max_bufsize = 64; fs_open.max_frames = 1;
         if (ioctl(fd, USB_FS_OPEN, &fs_open) != 0) {
             gp_log("slot[%d] Steam IN fail errno=%d\n", slot, errno);
@@ -535,7 +562,9 @@ static void *usb_hid_thread(void *arg) {
     }
 
 main_loop: ;
-    int hs_state = (pid==PID_XBOX || pid==PID_STEAM) ? HS_STREAMING : HS_WAIT_81_01;
+    int hs_state = (pid==PID_XBOX || pid==PID_STEAM ||
+                pid==PID_STEAM_PUCK || pid==PID_STEAM_PUCK_ALT)
+                   ? HS_STREAMING : HS_WAIT_81_01;
     uint8_t nintendo_seq = 1;
 
     while (1) {
