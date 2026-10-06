@@ -57,6 +57,7 @@ static uint16_t touch_axis(int16_t value, uint16_t maximum) {
  * The pad coordinates are signed 16-bit values and pressure is unsigned.
  */
 void steam_parse_state(const uint8_t *buf, uint32_t len, ScePadData *out) {
+    static uint64_t timestamp;
     uint32_t buttons = read_u32(buf + 2);
     uint8_t l2 = trigger_axis(read_i16(buf + 6));
     uint8_t r2 = trigger_axis(read_i16(buf + 8));
@@ -118,6 +119,8 @@ void steam_parse_state(const uint8_t *buf, uint32_t len, ScePadData *out) {
     (void)right_pressure;
     out->connected = 1;
     out->quat.w = 1.0f;
+    out->timestamp = ++timestamp;
+    out->count = 1;
     (void)len;
 }
 

@@ -140,8 +140,9 @@ The implementation maps the face buttons, bumpers, stick clicks, d-pad,
 Steam/Home, three-line/Share, and two-screen/Options buttons, analog triggers,
 both sticks, and both trackpads into `ScePadData`. Trackpad coordinates are
 scaled to the DualSense touch surface and touch/click state is reported through
-the virtual controller. Paddles and IMU data are currently ignored. Rumble is
-not currently supported:
+the virtual controller. Each report also updates the virtual pad timestamp and
+report count so games do not treat the input stream as stale. Paddles and IMU
+data are currently ignored. Rumble is not currently supported:
 the payload only receives input reports and has no virtual-device output
 callback from which to obtain PS5 haptic requests.
 
