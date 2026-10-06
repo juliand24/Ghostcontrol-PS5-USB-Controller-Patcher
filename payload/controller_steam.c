@@ -86,7 +86,8 @@ void steam_parse_state(const uint8_t *buf, uint32_t len, ScePadData *out) {
     if (buttons & STEAM_R3)        out->buttons |= SCE_PAD_BUTTON_R3;
     if (buttons & STEAM_MENU)      out->buttons |= SCE_PAD_BUTTON_OPTIONS;
     if (buttons & STEAM_VIEW)      out->buttons |= SCE_PAD_BUTTON_CREATE;
-    if (buttons & STEAM_STEAM)     out->buttons |= SCE_PAD_BUTTON_PS;
+    /* Do not map the Steam/Guide button to PS: a transient HID state can
+     * otherwise repeatedly open the PS5 Home screen. */
     if (buttons & STEAM_DPAD_UP)   out->buttons |= SCE_PAD_BUTTON_UP;
     if (buttons & STEAM_DPAD_DOWN) out->buttons |= SCE_PAD_BUTTON_DOWN;
     if (buttons & STEAM_DPAD_LEFT) out->buttons |= SCE_PAD_BUTTON_LEFT;
