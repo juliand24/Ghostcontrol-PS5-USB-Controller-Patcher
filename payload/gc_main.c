@@ -241,6 +241,7 @@ static const char *UGEN_PATHS[] = {
 static int steam_puck_disable_lizard(int fd, int slot) {
     uint8_t feature[64];
     struct usb_gen_descriptor report;
+    struct usb_ctl_request request;
     int iface;
 
     memset(feature, 0, sizeof(feature));
@@ -249,15 +250,36 @@ static int steam_puck_disable_lizard(int fd, int slot) {
     feature[2] = 0x03;
     feature[3] = 0x09;
 
+    /* Proteus/Nereid expose controller slots as interfaces 2..5. Send the
+     * HID class request directly so the composite device cannot route the
+     * feature report to its keyboard/mouse interface. */
+    for (iface = 2; iface <= 5; iface++) {
+        memset(&request, 0, sizeof(request));
+        request.ucr_data = feature;
+        request.ucr_flags = 0;
+        request.ucr_request.bmRequestType = UT_WRITE_CLASS_INTERFACE;
+        request.ucr_request.bRequest = UR_SET_REPORT;
+        USETW(request.ucr_request.wValue,
+              (uint16_t)((UHID_FEATURE_REPORT << 8) | 0x01));
+        USETW(request.ucr_request.wIndex, (uint16_t)iface);
+        USETW(request.ucr_request.wLength, sizeof(feature));
+        if (ioctl(fd, USB_DO_REQUEST, &request) == 0) {
+            gp_log("slot[%d] puck lizard mode disabled via iface %d\n",
+                   slot, iface);
+            return 0;
+        }
+    }
+
+    /* Keep a HID ioctl fallback for PS5 firmware revisions that reject
+     * USB_DO_REQUEST on the ugen node. */
     memset(&report, 0, sizeof(report));
     report.ugd_data = feature;
     report.ugd_maxlen = sizeof(feature);
     report.ugd_report_type = UHID_FEATURE_REPORT;
-
-    for (iface = 0; iface < 6; iface++) {
+    for (iface = 2; iface <= 5; iface++) {
         report.ugd_iface_index = (uint8_t)iface;
         if (ioctl(fd, USB_SET_REPORT, &report) == 0) {
-            gp_log("slot[%d] puck lizard mode disabled on iface %d\n",
+            gp_log("slot[%d] puck lizard mode disabled via HID iface %d\n",
                    slot, iface);
             return 0;
         }
