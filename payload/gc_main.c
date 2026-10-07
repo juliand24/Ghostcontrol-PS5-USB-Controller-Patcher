@@ -309,8 +309,8 @@ static int probe_one_path(const char *path, uint16_t *out_vid, uint16_t *out_pid
     memset(&dinfo, 0, sizeof(dinfo));
     if (ioctl(fd, USB_DEVICEINFO, &dinfo) == 0 &&
         dinfo.udi_vendorNo == STEAM_VID &&
-        (dinfo.udi_productNo == STEAM_PUCK_PID ||
-         dinfo.udi_productNo == STEAM_PUCK_ALT_PID)) {
+        dinfo.udi_productNo >= STEAM_PUCK_PID &&
+        dinfo.udi_productNo <= STEAM_PUCK_ALT_PID) {
         *out_vid = VID_STEAM;
         *out_pid = dinfo.udi_productNo;
         gp_log("probe: %s Valve receiver pid=0x%04x\n",
@@ -376,10 +376,17 @@ static int probe_one_path(const char *path, uint16_t *out_vid, uint16_t *out_pid
         goto done;
     }
 
-    /* Steam Controller 2 wireless receiver (Proteus/Nereid): some
-     * firmware exposes the same 0x42 state report on the second IN endpoint. */
-    po.ep_no=STEAM_PUCK_EP_IN;
-    if (ioctl(fd,USB_FS_OPEN,&po)==0 && po.max_packet_length>0 && po.max_packet_length<=64) {
+    /* Steam receiver: inspect every possible interrupt-IN endpoint. The
+     * receiver may expose mouse/lizard data on 0x81 and controller data on a
+     * later endpoint, so do not stop after the first HID interface. */
+    { struct usb_fs_close pc;
+      memset(&pc, 0, sizeof(pc));
+      pc.ep_index = 0;
+      ioctl(fd, USB_FS_CLOSE, &pc); }
+    for (uint8_t puck_ep = 0x81; puck_ep <= 0x86; puck_ep++) {
+        po.ep_no = puck_ep;
+        if (ioctl(fd,USB_FS_OPEN,&po)!=0)
+            continue;
         uint8_t probe_buf[64]; memset(probe_buf, 0, sizeof(probe_buf));
         void *probe_ptrs[1] = { probe_buf };
         uint32_t probe_len[1] = { sizeof(probe_buf) };
@@ -393,6 +400,9 @@ static int probe_one_path(const char *path, uint16_t *out_vid, uint16_t *out_pid
         }
         struct usb_fs_close pc; memset(&pc, 0, sizeof(pc));
         pc.ep_index = 0; ioctl(fd, USB_FS_CLOSE, &pc);
+        gp_log("probe: %s receiver ep=0x%02x report=0x%02x len=%u\n",
+               path, puck_ep, probe_len[0] ? probe_buf[0] : 0,
+               (unsigned)probe_len[0]);
         if (probe_len[0] >= 29 && probe_buf[0] == STEAM_REPORT_STATE) {
             gp_log("probe: %s report=0x42 on receiver endpoint -> Steam puck\n", path);
             *out_vid=VID_STEAM; *out_pid=PID_STEAM_PUCK;
