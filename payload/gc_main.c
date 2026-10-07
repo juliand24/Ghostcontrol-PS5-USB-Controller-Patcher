@@ -31,6 +31,7 @@
 #include <dev/usb/usb.h>
 #include <dev/usb/usb_ioctl.h>
 #include <dev/usb/usb_endian.h>
+#include <dev/usb/usbhid.h>
 
 #ifdef __PROSPERO__
 #include <ps5/kernel.h>
@@ -236,6 +237,39 @@ static const char *UGEN_PATHS[] = {
     "/dev/ugen1.2","/dev/ugen0.2","/dev/ugen0.3",
 };
 #define N_UGEN_PATHS ((int)(sizeof(UGEN_PATHS)/sizeof(UGEN_PATHS[0])))
+
+static int steam_puck_disable_lizard(int fd, int slot) {
+    uint8_t feature[64];
+    struct usb_gen_descriptor report;
+    int iface;
+
+    memset(feature, 0, sizeof(feature));
+    feature[0] = 0x01;
+    feature[1] = 0x87;
+    feature[2] = 0x03;
+    feature[3] = 0x09;
+
+    memset(&report, 0, sizeof(report));
+    report.ugd_data = feature;
+    report.ugd_maxlen = sizeof(feature);
+    report.ugd_report_type = UHID_FEATURE_REPORT;
+
+    for (iface = 0; iface < 6; iface++) {
+        report.ugd_iface_index = (uint8_t)iface;
+        if (ioctl(fd, USB_SET_REPORT, &report) == 0) {
+            gp_log("slot[%d] puck lizard mode disabled on iface %d\n",
+                   slot, iface);
+            return 0;
+        }
+    }
+    report.ugd_iface_index = USB_IFACE_INDEX_ANY;
+    if (ioctl(fd, USB_SET_REPORT, &report) == 0) {
+        gp_log("slot[%d] puck lizard mode disabled on any iface\n", slot);
+        return 0;
+    }
+    gp_log("slot[%d] puck lizard-off failed errno=%d\n", slot, errno);
+    return -1;
+}
 
 /* Probe one ugen2.x path to identify controller type.
  * Returns 1 with vid/pid set, 0 if not a known controller.
@@ -474,24 +508,7 @@ static void *usb_hid_thread(void *arg) {
             /* HID feature report 0x01, SET_SETTINGS_VALUES (0x87):
              * setting 9 is lizard mode, and zero enables raw Triton state
              * reports. The receiver watchdog requires this every 3 seconds. */
-            uint8_t feature[64];
-            struct usb_gen_descriptor report;
-            memset(feature, 0, sizeof(feature));
-            feature[0] = 0x01;
-            feature[1] = 0x87;
-            feature[2] = 0x03;
-            feature[3] = 0x09;
-            feature[4] = 0x00;
-            feature[5] = 0x00;
-            memset(&report, 0, sizeof(report));
-            report.ugd_data = feature;
-            report.ugd_maxlen = sizeof(feature);
-            report.ugd_iface_index = USB_IFACE_INDEX_ANY;
-            report.ugd_report_type = 2; /* UHID_FEATURE_REPORT */
-            if (ioctl(fd, USB_SET_REPORT, &report) != 0)
-                gp_log("slot[%d] puck lizard-off failed errno=%d\n", slot, errno);
-            else
-                gp_log("slot[%d] puck lizard mode disabled\n", slot);
+            steam_puck_disable_lizard(fd, slot);
         }
 
         buffers[0] = buf; lengths[0] = 64;
@@ -616,17 +633,7 @@ main_loop: ;
     while (1) {
         if ((pid == PID_STEAM_PUCK || pid == PID_STEAM_PUCK_ALT) &&
             (++steam_lizard_ticks >= 60)) {
-            uint8_t feature[64];
-            struct usb_gen_descriptor report;
-            memset(feature, 0, sizeof(feature));
-            feature[0] = 0x01; feature[1] = 0x87;
-            feature[2] = 0x03; feature[3] = 0x09;
-            memset(&report, 0, sizeof(report));
-            report.ugd_data = feature;
-            report.ugd_maxlen = sizeof(feature);
-            report.ugd_iface_index = USB_IFACE_INDEX_ANY;
-            report.ugd_report_type = 2;
-            ioctl(fd, USB_SET_REPORT, &report);
+            steam_puck_disable_lizard(fd, slot);
             steam_lizard_ticks = 0;
         }
         memset(buf,0,64);
