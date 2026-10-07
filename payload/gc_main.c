@@ -493,7 +493,40 @@ static void *usb_hid_thread(void *arg) {
         fs_open.ep_index = 0;
         fs_open.ep_no = STEAM_EP_IN;
         fs_open.max_bufsize = 64; fs_open.max_frames = 1;
-        if (ioctl(fd, USB_FS_OPEN, &fs_open) != 0) {
+        if (pid == PID_STEAM_PUCK || pid == PID_STEAM_PUCK_ALT) {
+            /* The receiver exposes a short mouse endpoint while lizard mode
+             * is active. Do not bind that endpoint as controller input:
+             * search the interrupt-IN endpoints for a gamepad-sized packet. */
+            static const uint8_t puck_eps[] = {
+                0x81, 0x82, 0x83, 0x84, 0x85, 0x86
+            };
+            int opened = 0;
+            size_t pi;
+            for (pi = 0; pi < sizeof(puck_eps); pi++) {
+                memset(&fs_open, 0, sizeof(fs_open));
+                fs_open.ep_index = 0;
+                fs_open.ep_no = puck_eps[pi];
+                fs_open.max_bufsize = 64;
+                fs_open.max_frames = 1;
+                if (ioctl(fd, USB_FS_OPEN, &fs_open) == 0) {
+                    if (fs_open.max_packet_length >= 32) {
+                        opened = 1;
+                        break;
+                    }
+                    gp_log("slot[%d] puck endpoint 0x%02x is mouse-sized (%u)\n",
+                           slot, fs_open.ep_no,
+                           (unsigned)fs_open.max_packet_length);
+                    { struct usb_fs_close close_ep;
+                      memset(&close_ep, 0, sizeof(close_ep));
+                      close_ep.ep_index = 0;
+                      ioctl(fd, USB_FS_CLOSE, &close_ep); }
+                }
+            }
+            if (!opened) {
+                gp_log("slot[%d] puck has no gamepad-sized IN endpoint\n", slot);
+                goto uninit_exit;
+            }
+        } else if (ioctl(fd, USB_FS_OPEN, &fs_open) != 0) {
             if (pid == PID_STEAM ||
                 (fs_open.ep_no = STEAM_PUCK_EP_IN,
                  ioctl(fd, USB_FS_OPEN, &fs_open) != 0)) {
