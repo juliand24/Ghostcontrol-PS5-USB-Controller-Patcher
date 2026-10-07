@@ -40,9 +40,11 @@ static uint8_t stick_axis(int16_t value) {
 }
 
 static uint8_t trigger_axis(int16_t value) {
-    if (value <= -32768) return 0;
+    /* Triton reports trigger travel as an unsigned 0..32767 value carried
+     * in the signed field. Idle is zero; it must not become half-pressed. */
+    if (value <= 0) return 0;
     if (value >= 32767) return 255;
-    return (uint8_t)(((int32_t)value + 32768) >> 8);
+    return (uint8_t)(((uint32_t)value * 255u) / 32767u);
 }
 
 static uint16_t touch_axis(int16_t value, uint16_t maximum) {
