@@ -21,6 +21,7 @@
 #include <pthread.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <time.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -510,7 +511,7 @@ static void *usb_hid_thread(void *arg) {
     void    *buffers[1]; uint32_t lengths[1];
     int fd = -1, out_opened = 0;
     int usb_ready_notified = 0;
-    uint32_t steam_lizard_ticks = 0;
+    uint64_t steam_lizard_keepalive_ms = 0;
     int steam_first_report_logged = 0;
 
     gp_log("slot[%d] USB thread: %s VID=0x%04x PID=0x%04x\n",
@@ -538,6 +539,8 @@ static void *usb_hid_thread(void *arg) {
 
         if (pid == PID_STEAM_PUCK || pid == PID_STEAM_PUCK_ALT)
             steam_puck_disable_lizard(fd, slot);
+        steam_lizard_keepalive_ms =
+            (uint64_t)time(NULL) * 1000u;
 
         memset(&fs_open, 0, sizeof(fs_open));
         fs_open.ep_index = 0;
@@ -733,9 +736,11 @@ main_loop: ;
 
     while (1) {
         if ((pid == PID_STEAM_PUCK || pid == PID_STEAM_PUCK_ALT) &&
-            (++steam_lizard_ticks >= 60)) {
+            ((uint64_t)time(NULL) * 1000u >=
+             steam_lizard_keepalive_ms + 3000u)) {
             steam_puck_disable_lizard(fd, slot);
-            steam_lizard_ticks = 0;
+            steam_lizard_keepalive_ms =
+                (uint64_t)time(NULL) * 1000u;
         }
         memset(buf,0,64);
         buffers[0]=buf; lengths[0]=64;
