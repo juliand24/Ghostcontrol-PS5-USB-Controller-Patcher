@@ -307,7 +307,11 @@ static int probe_one_path(const char *path, uint16_t *out_vid, uint16_t *out_pid
      * lizard mode, which otherwise gets mistaken for a Nintendo pad. */
     struct usb_device_info dinfo;
     memset(&dinfo, 0, sizeof(dinfo));
-    if (ioctl(fd, USB_DEVICEINFO, &dinfo) == 0 &&
+    int device_info_ok = (ioctl(fd, USB_DEVICEINFO, &dinfo) == 0);
+    if (device_info_ok)
+        gp_log("probe: %s device VID=0x%04x PID=0x%04x\n",
+               path, dinfo.udi_vendorNo, dinfo.udi_productNo);
+    if (device_info_ok &&
         dinfo.udi_vendorNo == STEAM_VID &&
         dinfo.udi_productNo >= STEAM_PUCK_PID &&
         dinfo.udi_productNo <= STEAM_PUCK_ALT_PID) {
@@ -383,10 +387,12 @@ static int probe_one_path(const char *path, uint16_t *out_vid, uint16_t *out_pid
       memset(&pc, 0, sizeof(pc));
       pc.ep_index = 0;
       ioctl(fd, USB_FS_CLOSE, &pc); }
+    int receiver_candidate = 0;
     for (uint8_t puck_ep = 0x81; puck_ep <= 0x86; puck_ep++) {
         po.ep_no = puck_ep;
         if (ioctl(fd,USB_FS_OPEN,&po)!=0)
             continue;
+        receiver_candidate++;
         uint8_t probe_buf[64]; memset(probe_buf, 0, sizeof(probe_buf));
         void *probe_ptrs[1] = { probe_buf };
         uint32_t probe_len[1] = { sizeof(probe_buf) };
@@ -408,6 +414,14 @@ static int probe_one_path(const char *path, uint16_t *out_vid, uint16_t *out_pid
             *out_vid=VID_STEAM; *out_pid=PID_STEAM_PUCK;
             found = 1; goto done;
         }
+    }
+    if (receiver_candidate >= 2) {
+        gp_log("probe: %s has %d Valve receiver endpoints; keeping puck type\n",
+               path, receiver_candidate);
+        *out_vid = VID_STEAM;
+        *out_pid = PID_STEAM_PUCK;
+        found = 1;
+        goto done;
     }
 
     /* Xbox One: ep=0x82, maxpkt in (0,64] */
