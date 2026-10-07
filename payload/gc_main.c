@@ -388,7 +388,7 @@ static int probe_one_path(const char *path, uint16_t *out_vid, uint16_t *out_pid
       pc.ep_index = 0;
       ioctl(fd, USB_FS_CLOSE, &pc); }
     int receiver_candidate = 0;
-    for (uint8_t puck_ep = 0x81; puck_ep <= 0x86; puck_ep++) {
+    for (uint8_t puck_ep = 0x82; puck_ep <= 0x86; puck_ep++) {
         po.ep_no = puck_ep;
         if (ioctl(fd,USB_FS_OPEN,&po)!=0)
             continue;
@@ -548,7 +548,7 @@ static void *usb_hid_thread(void *arg) {
              * is active. Do not bind that endpoint as controller input:
              * search the interrupt-IN endpoints for a gamepad-sized packet. */
             static const uint8_t puck_eps[] = {
-                0x81, 0x82, 0x83, 0x84, 0x85, 0x86
+                0x82, 0x83, 0x84, 0x85, 0x86, 0x81
             };
             int opened = 0;
             size_t pi;
@@ -567,6 +567,19 @@ static void *usb_hid_thread(void *arg) {
                            slot, fs_open.ep_no,
                            (unsigned)fs_open.max_packet_length);
                     break;
+                }
+            }
+            if (!opened) {
+                memset(&fs_open, 0, sizeof(fs_open));
+                fs_open.ep_index = 0;
+                fs_open.ep_no = STEAM_EP_IN;
+                fs_open.max_bufsize = 64;
+                fs_open.max_frames = 1;
+                if (ioctl(fd, USB_FS_OPEN, &fs_open) == 0) {
+                    opened = 1;
+                    gp_log("slot[%d] puck fallback endpoint 0x%02x maxpkt=%u\n",
+                           slot, fs_open.ep_no,
+                           (unsigned)fs_open.max_packet_length);
                 }
             }
             if (!opened) {
@@ -852,7 +865,10 @@ static void *controller_manager_thread(void *arg) {
                 (vid==VID_SWITCH && pid==PID_SWITCH) ? "Nintendo Switch Pro / 8BitDo" :
                 (vid==VID_NATIVE && pid==PID_NATIVE) ? "8BitDo Native" :
                 (vid==VID_XBOX   && pid==PID_XBOX)   ? "Xbox One S" :
-                (vid==VID_STEAM  && pid==PID_STEAM)  ? "Steam Controller 2" : "Unknown";
+                (vid==VID_STEAM  && pid==PID_STEAM)  ? "Steam Controller 2" :
+                (vid==VID_STEAM  && (pid==PID_STEAM_PUCK ||
+                                     pid==PID_STEAM_PUCK_ALT)) ? "Steam Controller 2 puck" :
+                "Unknown";
 
             gp_log("manager: %s at %s → slot[%d]\n", name, path, slot);
             notify("Ghostcontrol: %s detected — assign user on screen", name);
