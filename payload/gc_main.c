@@ -415,7 +415,7 @@ static int probe_one_path(const char *path, uint16_t *out_vid, uint16_t *out_pid
             found = 1; goto done;
         }
     }
-    if (receiver_candidate >= 2) {
+    if (receiver_candidate >= 1) {
         gp_log("probe: %s has %d Valve receiver endpoints; keeping puck type\n",
                path, receiver_candidate);
         *out_vid = VID_STEAM;
@@ -551,6 +551,7 @@ static void *usb_hid_thread(void *arg) {
                 0x82, 0x83, 0x84, 0x85, 0x86, 0x81
             };
             int opened = 0;
+            int state_endpoint = 0;
             size_t pi;
             for (pi = 0; pi < sizeof(puck_eps); pi++) {
                 memset(&fs_open, 0, sizeof(fs_open));
@@ -559,31 +560,45 @@ static void *usb_hid_thread(void *arg) {
                 fs_open.max_bufsize = 64;
                 fs_open.max_frames = 1;
                 if (ioctl(fd, USB_FS_OPEN, &fs_open) == 0) {
-                    /* Do not classify by packet size alone. Some receiver
-                     * firmware advertises a short max packet but returns
-                     * full Triton reports after a controller connects. */
                     opened = 1;
                     gp_log("slot[%d] puck candidate endpoint 0x%02x maxpkt=%u\n",
                            slot, fs_open.ep_no,
                            (unsigned)fs_open.max_packet_length);
-                    break;
+                    buffers[0] = buf; lengths[0] = 64;
+                    eps[0].ppBuffer = buffers; eps[0].pLength = lengths;
+                    eps[0].nFrames = 1; eps[0].timeout = 150;
+                    eps[0].flags = USB_FS_FLAG_SINGLE_SHORT_OK |
+                                   USB_FS_FLAG_MULTI_SHORT_OK;
+                    memset(buf, 0, sizeof(buf));
+                    memset(&start, 0, sizeof(start));
+                    start.ep_index = 0;
+                    if (ioctl(fd, USB_FS_START, &start) == 0) {
+                        for (int wait = 0; wait < 20; wait++) {
+                            memset(&complete, 0, sizeof(complete));
+                            complete.ep_index = 0;
+                            if (ioctl(fd, USB_FS_COMPLETE, &complete) == 0)
+                                break;
+                            if (errno != EBUSY) break;
+                            usleep(5000);
+                        }
+                    }
+                    if (lengths[0] > 0 && buf[0] == STEAM_REPORT_STATE) {
+                        state_endpoint = 1;
+                        gp_log("slot[%d] puck state endpoint 0x%02x selected\n",
+                               slot, fs_open.ep_no);
+                        break;
+                    }
+                    gp_log("slot[%d] puck endpoint 0x%02x report=0x%02x; skipping\n",
+                           slot, fs_open.ep_no, lengths[0] ? buf[0] : 0);
+                    { struct usb_fs_close close_ep;
+                      memset(&close_ep, 0, sizeof(close_ep));
+                      close_ep.ep_index = 0;
+                      ioctl(fd, USB_FS_CLOSE, &close_ep); }
                 }
             }
-            if (!opened) {
-                memset(&fs_open, 0, sizeof(fs_open));
-                fs_open.ep_index = 0;
-                fs_open.ep_no = STEAM_EP_IN;
-                fs_open.max_bufsize = 64;
-                fs_open.max_frames = 1;
-                if (ioctl(fd, USB_FS_OPEN, &fs_open) == 0) {
-                    opened = 1;
-                    gp_log("slot[%d] puck fallback endpoint 0x%02x maxpkt=%u\n",
-                           slot, fs_open.ep_no,
-                           (unsigned)fs_open.max_packet_length);
-                }
-            }
-            if (!opened) {
-                gp_log("slot[%d] puck has no gamepad-sized IN endpoint\n", slot);
+            if (!opened || !state_endpoint) {
+                gp_log("slot[%d] puck has no 0x42 controller-state endpoint\n",
+                       slot);
                 goto uninit_exit;
             }
         } else if (ioctl(fd, USB_FS_OPEN, &fs_open) != 0) {
