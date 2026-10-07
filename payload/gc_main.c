@@ -487,6 +487,7 @@ static void *usb_hid_thread(void *arg) {
     int fd = -1, out_opened = 0;
     int usb_ready_notified = 0;
     uint32_t steam_lizard_ticks = 0;
+    int steam_first_report_logged = 0;
 
     gp_log("slot[%d] USB thread: %s VID=0x%04x PID=0x%04x\n",
            slot, dev_path, vid, pid);
@@ -534,17 +535,14 @@ static void *usb_hid_thread(void *arg) {
                 fs_open.max_bufsize = 64;
                 fs_open.max_frames = 1;
                 if (ioctl(fd, USB_FS_OPEN, &fs_open) == 0) {
-                    if (fs_open.max_packet_length >= 32) {
-                        opened = 1;
-                        break;
-                    }
-                    gp_log("slot[%d] puck endpoint 0x%02x is mouse-sized (%u)\n",
+                    /* Do not classify by packet size alone. Some receiver
+                     * firmware advertises a short max packet but returns
+                     * full Triton reports after a controller connects. */
+                    opened = 1;
+                    gp_log("slot[%d] puck candidate endpoint 0x%02x maxpkt=%u\n",
                            slot, fs_open.ep_no,
                            (unsigned)fs_open.max_packet_length);
-                    { struct usb_fs_close close_ep;
-                      memset(&close_ep, 0, sizeof(close_ep));
-                      close_ep.ep_index = 0;
-                      ioctl(fd, USB_FS_CLOSE, &close_ep); }
+                    break;
                 }
             }
             if (!opened) {
@@ -721,6 +719,13 @@ main_loop: ;
         if(lengths[0]<1) continue;
 
         uint32_t len = lengths[0];
+
+        if ((pid == PID_STEAM_PUCK || pid == PID_STEAM_PUCK_ALT) &&
+            !steam_first_report_logged && len > 0) {
+            gp_log("slot[%d] puck first report=0x%02x len=%u\n",
+                   slot, buf[0], (unsigned)len);
+            steam_first_report_logged = 1;
+        }
 
         ScePadData pad; memset(&pad,0,sizeof(pad)); pad.quat.w=1.0f;
         int injected = 0;
