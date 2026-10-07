@@ -489,6 +489,9 @@ static void *usb_hid_thread(void *arg) {
             close(fd); goto exit_slot;
         }
 
+        if (pid == PID_STEAM_PUCK || pid == PID_STEAM_PUCK_ALT)
+            steam_puck_disable_lizard(fd, slot);
+
         memset(&fs_open, 0, sizeof(fs_open));
         fs_open.ep_index = 0;
         fs_open.ep_no = STEAM_EP_IN;
@@ -536,13 +539,6 @@ static void *usb_hid_thread(void *arg) {
         }
         gp_log("slot[%d] Steam IN ep=0x%02x maxpkt=%u\n",
                slot, fs_open.ep_no, (unsigned)fs_open.max_packet_length);
-
-        if (pid == PID_STEAM_PUCK || pid == PID_STEAM_PUCK_ALT) {
-            /* HID feature report 0x01, SET_SETTINGS_VALUES (0x87):
-             * setting 9 is lizard mode, and zero enables raw Triton state
-             * reports. The receiver watchdog requires this every 3 seconds. */
-            steam_puck_disable_lizard(fd, slot);
-        }
 
         buffers[0] = buf; lengths[0] = 64;
         eps[0].ppBuffer = buffers; eps[0].pLength = lengths;
